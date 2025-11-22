@@ -63,6 +63,7 @@
 
 <script>
 import * as THREE from 'three';
+import { markRaw } from 'vue';
 import { Revolution3D } from '../modules/Revolution3D.js';
 
 export default {
@@ -105,24 +106,25 @@ export default {
   methods: {
     initThreeJS() {
       // Cena
-      this.scene = new THREE.Scene();
+      this.scene = markRaw(new THREE.Scene());
       this.scene.background = new THREE.Color(0xf0f0f0);
       
       // Câmera
-      this.camera = new THREE.PerspectiveCamera(
-        75, 
-        this.width / this.height, 
-        0.1, 
+      this.camera = markRaw(new THREE.PerspectiveCamera(
+        75,
+        this.width / this.height,
+        0.1,
         1000
-      );
+      ));
       this.resetCamera();
       
       // Renderer
-      this.renderer = new THREE.WebGLRenderer({ antialias: true });
+      this.renderer = markRaw(new THREE.WebGLRenderer({ antialias: true }));
       this.renderer.setSize(this.width, this.height);
-      this.renderer.shadowMap.enabled = true;
+      // Disable shadow map by default to improve performance on slower machines
+      this.renderer.shadowMap.enabled = false;
       this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-      
+
       this.$refs.container.appendChild(this.renderer.domElement);
       
       // Luzes
@@ -134,17 +136,20 @@ export default {
       // Eixos de referência
       this.setupAxes();
       
-      // Começar a renderização
+      // Bind animate so `this` remains correct in the RAF loop and start rendering
+      this.animate = this.animate.bind(this);
+      // Use a flag to only render when needed to reduce CPU/GPU usage
+      this.needsRender = true;
       this.animate();
     },
     
     setupLighting() {
       // Luz ambiente
-      const ambientLight = new THREE.AmbientLight(0x404040, 0.4);
+      const ambientLight = markRaw(new THREE.AmbientLight(0x404040, 0.4));
       this.scene.add(ambientLight);
       
       // Luz direcional
-      const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+      const directionalLight = markRaw(new THREE.DirectionalLight(0xffffff, 0.8));
       directionalLight.position.set(50, 50, 50);
       directionalLight.castShadow = true;
       directionalLight.shadow.mapSize.width = 1024;
@@ -152,18 +157,18 @@ export default {
       this.scene.add(directionalLight);
       
       // Luz de preenchimento
-      const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
+      const fillLight = markRaw(new THREE.DirectionalLight(0xffffff, 0.3));
       fillLight.position.set(-50, -50, -50);
       this.scene.add(fillLight);
     },
     
     setupGrid() {
-      const gridHelper = new THREE.GridHelper(200, 20, 0x888888, 0xcccccc);
+      const gridHelper = markRaw(new THREE.GridHelper(200, 20, 0x888888, 0xcccccc));
       this.scene.add(gridHelper);
     },
     
     setupAxes() {
-      const axesHelper = new THREE.AxesHelper(100);
+      const axesHelper = markRaw(new THREE.AxesHelper(100));
       this.scene.add(axesHelper);
     },
     
@@ -217,6 +222,7 @@ export default {
       this.camera.position.z = this.cameraDistance * Math.cos(this.cameraRotationX) * Math.cos(this.cameraRotationY);
       
       this.camera.lookAt(0, 0, 0);
+      this.needsRender = true;
     },
     
     resetCamera() {
@@ -227,16 +233,39 @@ export default {
     },
     
     generateSurface() {
-      if (!this.curveData || !this.curveData.points || this.curveData.points.length === 0) {
+      if (!this.curveData) {
         console.warn('Dados de curva não disponíveis');
         return;
       }
+
+      // If curve exists but has no points, remove current mesh and clear info
+      if (!this.curveData.points || this.curveData.points.length === 0) {
+        if (this.mesh) {
+          this.scene.remove(this.mesh);
+          if (this.mesh.geometry) this.mesh.geometry.dispose();
+          if (this.mesh.material) this.mesh.material.dispose();
+          this.mesh = null;
+        }
+
+        this.geometryInfo = null;
+        this.needsRender = true;
+        this.$emit('geometry-generated', {
+          vertices: [],
+          faces: [],
+          normals: [],
+          info: null
+        });
+
+        return;
+      }
       
-      // Remover malha anterior
+      // Remover malha anterior (dispose + clear reference)
       if (this.mesh) {
         this.scene.remove(this.mesh);
         if (this.mesh.geometry) this.mesh.geometry.dispose();
         if (this.mesh.material) this.mesh.material.dispose();
+        // Avoid keeping a stale reference to a disposed mesh
+        this.mesh = null;
       }
       
       // Configurar revolução
@@ -245,41 +274,53 @@ export default {
       this.revolution.setMaxAngle(this.revolutionAngle);
       this.revolution.setSubdivisions(this.subdivisions);
       
-      // Gerar geometria
-      this.revolution.generateSurface();
-      const geometry = this.revolution.getGeometry();
-      
-      if (geometry.vertices.length === 0) {
+      // Generate typed geometry (positions, indices, normals)
+      const typed = this.revolution.getTypedGeometry();
+
+      if (!typed || !typed.positions || typed.positions.length === 0) {
         console.warn('Nenhuma geometria foi gerada');
         return;
       }
-      
-      // Criar geometria Three.js
-      const threeGeometry = new THREE.BufferGeometry();
-      
-      // Vértices
-      const vertices = [];
-      geometry.vertices.forEach(vertex => {
-        vertices.push(vertex.x, vertex.y, vertex.z);
-      });
-      threeGeometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-      
-      // Faces (índices)
-      const indices = [];
-      geometry.faces.forEach(face => {
-        indices.push(face[0], face[1], face[2]);
-      });
-      threeGeometry.setIndex(indices);
-      
-      // Normais
-      if (geometry.normals.length > 0) {
-        const normals = [];
-        geometry.normals.forEach(normal => {
-          normals.push(normal.x, normal.y, normal.z);
-        });
-        threeGeometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+
+      // Reuse existing BufferGeometry when possible to avoid constant GC
+      let threeGeometry = this.mesh ? this.mesh.geometry : null;
+
+      const needsRecreate = !threeGeometry ||
+        !threeGeometry.attributes.position ||
+        threeGeometry.attributes.position.count !== (typed.info.vertexCount);
+
+      if (needsRecreate) {
+        if (threeGeometry) {
+          threeGeometry.dispose();
+        }
+        threeGeometry = new THREE.BufferGeometry();
+        threeGeometry.setAttribute('position', new THREE.BufferAttribute(typed.positions, 3));
+        threeGeometry.setIndex(new THREE.BufferAttribute(typed.indices, 1));
+        if (typed.normals && typed.normals.length > 0) {
+          threeGeometry.setAttribute('normal', new THREE.BufferAttribute(typed.normals, 3));
+        } else {
+          threeGeometry.computeVertexNormals();
+        }
       } else {
-        threeGeometry.computeVertexNormals();
+        // Update existing attributes in-place
+        threeGeometry.attributes.position.array.set(typed.positions);
+        threeGeometry.attributes.position.needsUpdate = true;
+
+        if (threeGeometry.index && threeGeometry.index.array.length === typed.indices.length) {
+          threeGeometry.index.array.set(typed.indices);
+          threeGeometry.index.needsUpdate = true;
+        } else {
+          threeGeometry.setIndex(new THREE.BufferAttribute(typed.indices, 1));
+        }
+
+        if (typed.normals && threeGeometry.attributes.normal && threeGeometry.attributes.normal.array.length === typed.normals.length) {
+          threeGeometry.attributes.normal.array.set(typed.normals);
+          threeGeometry.attributes.normal.needsUpdate = true;
+        } else if (typed.normals) {
+          threeGeometry.setAttribute('normal', new THREE.BufferAttribute(typed.normals, 3));
+        } else {
+          threeGeometry.computeVertexNormals();
+        }
       }
       
       // Material baseado no modo de renderização
@@ -306,21 +347,29 @@ export default {
           });
       }
       
-      // Criar malha
-      this.mesh = new THREE.Mesh(threeGeometry, material);
-      this.mesh.castShadow = true;
-      this.mesh.receiveShadow = true;
-      this.scene.add(this.mesh);
+      // Create or update mesh
+      if (!this.mesh) {
+        this.mesh = markRaw(new THREE.Mesh(threeGeometry, material));
+        this.mesh.castShadow = true;
+        this.mesh.receiveShadow = true;
+        this.scene.add(this.mesh);
+      } else {
+        // update geometry and material
+        this.mesh.geometry = threeGeometry;
+        this.mesh.material.dispose();
+        this.mesh.material = material;
+      }
       
       // Atualizar informações
-      this.geometryInfo = geometry.info;
+      this.geometryInfo = typed.info;
+      this.needsRender = true;
       
       // Emitir evento com geometria gerada
       this.$emit('geometry-generated', {
-        vertices: geometry.vertices,
-        faces: geometry.faces,
-        normals: geometry.normals,
-        info: geometry.info
+        vertices: this.revolution.vertices,
+        faces: this.revolution.faces,
+        normals: this.revolution.normals,
+        info: typed.info
       });
     },
     
@@ -351,6 +400,7 @@ export default {
         
         this.mesh.material.dispose();
         this.mesh.material = material;
+        this.needsRender = true;
       }
     },
     
@@ -364,7 +414,11 @@ export default {
     
     animate() {
       requestAnimationFrame(this.animate);
-      this.renderer.render(this.scene, this.camera);
+      // Only render when something changed (camera, geometry, material)
+      if (this.needsRender) {
+        this.renderer.render(this.scene, this.camera);
+        this.needsRender = false;
+      }
     },
     
     cleanup() {
@@ -377,13 +431,10 @@ export default {
     }
   },
   watch: {
-    curveData: {
-      handler() {
-        if (this.curveData && this.curveData.points) {
-          this.generateSurface();
-        }
-      },
-      deep: true
+    curveData(newVal) {
+      if (newVal && newVal.points) {
+        this.generateSurface();
+      }
     },
     axis() {
       this.generateSurface();

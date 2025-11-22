@@ -89,6 +89,8 @@ export default {
       gridSize: 20,
       scale: 1,
       offset: { x: 0, y: 0 }
+      ,
+      emitScheduled: false
     };
   },
   computed: {
@@ -122,6 +124,7 @@ export default {
       this.curve.setDegree(this.degree);
       this.curve.setResolution(this.resolution);
       
+      // Emit initial curve immediately so Viewer3D receives initial data
       this.emitCurveUpdate();
     },
     
@@ -267,11 +270,11 @@ export default {
         ctx.fill();
         ctx.stroke();
         
-        // Índice do ponto
+        // Índice do ponto (mostrar como 1-based para o usuário)
         ctx.fillStyle = '#333';
         ctx.font = '12px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText(index.toString(), screenPoint.x, screenPoint.y - 10);
+        ctx.fillText((index + 1).toString(), screenPoint.x, screenPoint.y - 10);
       });
     },
     
@@ -299,7 +302,8 @@ export default {
       
       this.curve.updateControlPoint(this.draggedPointIndex, worldPos.x, worldPos.y);
       this.draw();
-      this.emitCurveUpdate();
+      // Throttle updates to reduce frequency of heavy recomputation in Viewer3D
+      this.scheduleEmitCurveUpdate();
     },
     
     handleMouseUp() {
@@ -315,6 +319,7 @@ export default {
       
       this.curve.addControlPoint(worldPos.x, worldPos.y);
       this.draw();
+      // New point: emit immediately
       this.emitCurveUpdate();
     },
     
@@ -343,19 +348,19 @@ export default {
     updateCurveType() {
       this.curve.setCurveType(this.curveType);
       this.draw();
-      this.emitCurveUpdate();
+      this.scheduleEmitCurveUpdate();
     },
     
     updateDegree() {
       this.curve.setDegree(this.degree);
       this.draw();
-      this.emitCurveUpdate();
+      this.scheduleEmitCurveUpdate();
     },
     
     updateResolution() {
       this.curve.setResolution(this.resolution);
       this.draw();
-      this.emitCurveUpdate();
+      this.scheduleEmitCurveUpdate();
     },
     
     updateRevolutionAxis() {
@@ -374,6 +379,16 @@ export default {
       this.$emit('curve-updated', {
         points: curvePoints,
         info: this.curve.getInfo()
+      });
+    },
+
+    // Throttle updates to once per animation frame while dragging
+    scheduleEmitCurveUpdate() {
+      if (this.emitScheduled) return;
+      this.emitScheduled = true;
+      requestAnimationFrame(() => {
+        this.emitCurveUpdate();
+        this.emitScheduled = false;
       });
     }
   },

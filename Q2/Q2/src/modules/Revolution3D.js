@@ -12,13 +12,20 @@ export class Revolution3D {
     this.vertices = [];
     this.faces = [];
     this.normals = [];
+
+    // Typed arrays cache (built on demand)
+    this._positions = null;
+    this._indices = null;
+    this._normals = null;
   }
 
   /**
    * Define o perfil 2D para revolução
    */
   setProfile(points) {
+    // Replace profile and clear previously generated geometry so new profile is used
     this.profile2D = points.map(p => ({x: p.x, y: p.y}));
+    this.clear();
   }
 
   /**
@@ -26,6 +33,7 @@ export class Revolution3D {
    */
   setAxis(axis) {
     this.axis = axis;
+    this.clear();
   }
 
   /**
@@ -33,6 +41,7 @@ export class Revolution3D {
    */
   setMaxAngle(angle) {
     this.maxAngle = Math.max(0, Math.min(360, angle));
+    this.clear();
   }
 
   /**
@@ -40,6 +49,7 @@ export class Revolution3D {
    */
   setSubdivisions(subdivisions) {
     this.subdivisions = Math.max(8, Math.min(360, subdivisions));
+    this.clear();
   }
 
   /**
@@ -93,6 +103,9 @@ export class Revolution3D {
         this.vertices.push(vertex3D);
       }
     }
+
+    // Invalidate typed arrays cache
+    this._positions = null;
   }
 
   /**
@@ -120,6 +133,9 @@ export class Revolution3D {
         this.faces.push([v2, v4, v3]);
       }
     }
+
+    // Invalidate typed arrays cache
+    this._indices = null;
   }
 
   /**
@@ -195,6 +211,9 @@ export class Revolution3D {
         }
       }
     });
+
+    // Invalidate typed normals cache
+    this._normals = null;
   }
 
   /**
@@ -230,12 +249,85 @@ export class Revolution3D {
   }
 
   /**
+   * Gera (se necessário) e retorna arrays tipados prontos para uso em BufferGeometry.
+   * Retorna um objeto: { positions: Float32Array, indices: (Uint32Array|Uint16Array), normals: Float32Array, info }
+   */
+  getTypedGeometry() {
+    // Ensure surface is generated
+    if (this.vertices.length === 0 || this.faces.length === 0) {
+      this.generateSurface();
+    }
+
+    const vCount = this.vertices.length;
+    const fCount = this.faces.length;
+
+    // Positions
+    if (!this._positions || this._positions.length !== vCount * 3) {
+      const pos = new Float32Array(vCount * 3);
+      for (let i = 0; i < vCount; i++) {
+        const v = this.vertices[i];
+        pos[i * 3] = v.x;
+        pos[i * 3 + 1] = v.y;
+        pos[i * 3 + 2] = v.z;
+      }
+      this._positions = pos;
+    }
+
+    // Indices
+    if (!this._indices || this._indices.length !== fCount * 3) {
+      // Use Uint32Array if needed (Three.js supports it if extension available)
+      const IndArray = vCount > 65535 ? Uint32Array : Uint16Array;
+      const ind = new IndArray(fCount * 3);
+      for (let i = 0; i < fCount; i++) {
+        const face = this.faces[i];
+        ind[i * 3] = face[0];
+        ind[i * 3 + 1] = face[1];
+        ind[i * 3 + 2] = face[2];
+      }
+      this._indices = ind;
+    }
+
+    // Normals
+    if (!this._normals || this._normals.length !== vCount * 3) {
+      // Ensure normals computed
+      if (!this.normals || this.normals.length !== vCount) {
+        this.generateVertexNormals();
+      }
+
+      const n = new Float32Array(vCount * 3);
+      for (let i = 0; i < vCount; i++) {
+        const no = this.normals[i] || { x: 0, y: 0, z: 0 };
+        n[i * 3] = no.x;
+        n[i * 3 + 1] = no.y;
+        n[i * 3 + 2] = no.z;
+      }
+      this._normals = n;
+    }
+
+    return {
+      positions: this._positions,
+      indices: this._indices,
+      normals: this._normals,
+      info: {
+        vertexCount: vCount,
+        faceCount: fCount,
+        axis: this.axis,
+        maxAngle: this.maxAngle,
+        subdivisions: this.subdivisions
+      }
+    };
+  }
+
+  /**
    * Limpa toda a geometria
    */
   clear() {
     this.vertices = [];
     this.faces = [];
     this.normals = [];
+    this._positions = null;
+    this._indices = null;
+    this._normals = null;
   }
 
   /**
