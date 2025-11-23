@@ -22,7 +22,7 @@ Um sistema web interativo completo para criação de superfícies de revolução
 - Alternância entre modos: wireframe, sólido e suavizado
 - Visualização em tempo real das alterações
 
-## 🚀 Como Usar
+## Como Usar
 
 ### Instalação e Execução
 
@@ -137,7 +137,7 @@ src/
 4. **Renderização**: Three.js exibe superfície com materiais/luzes
 5. **Exportação**: Dados salvos em formatos padrão da indústria
 
-## 🎓 Conceitos Matemáticos Implementados
+## Conceitos Matemáticos Implementados
 
 ### Curvas de Bézier - Algoritmo De Casteljau
 - Avaliação recursiva estável numericamente
