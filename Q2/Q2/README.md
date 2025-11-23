@@ -2,7 +2,7 @@
 
 Um sistema web interativo completo para criação de superfícies de revolução 3D a partir de perfis 2D definidos por curvas matemáticas. Desenvolvido como uma ferramenta educacional e profissional para compreender e aplicar conceitos de curvas paramétricas e superfícies de revolução.
 
-## 🎯 Características Principais
+## Características Principais
 
 ### Módulo de Geração de Curva 2D
 - **Algoritmo De Casteljau** para curvas de Bézier com avaliação recursiva
@@ -113,7 +113,7 @@ endsolid RevolutionSurface
 }
 ```
 
-## 🏗️ Arquitetura do Sistema
+## Arquitetura do Sistema
 
 ### Estrutura de Módulos
 
@@ -154,14 +154,14 @@ src/
 - Geração de malhas triangulares
 - Cálculo de normais para iluminação
 
-## 🔧 Tecnologias Utilizadas
+## Tecnologias Utilizadas
 
 - **Vue.js 3**: Framework reativo para interface
 - **Three.js**: Renderização WebGL e manipulação 3D
 - **Vite**: Build tool moderno e rápido
 - **JavaScript ES6+**: Módulos nativos e sintaxe moderna
 
-## 📚 Casos de Uso Educacionais
+## Casos de Uso Educacionais
 
 ### Para Estudantes
 - Visualização interativa de conceitos de geometria computacional
@@ -178,7 +178,7 @@ src/
 - Exportação para pipelines CAD/CAM
 - Validação de algoritmos de superfícies
 
-## 🎮 Controles Detalhados
+## Controles Detalhados
 
 ### Editor 2D
 - **Duplo-clique**: Adicionar ponto de controle
@@ -191,7 +191,7 @@ src/
 - **Shift+Scroll**: Pan (planejado)
 - **R**: Reset câmera (planejado)
 
-## 📈 Informações Técnicas
+## Informações Técnicas
 
 ### Performance
 - Otimização para curvas até 200 pontos
@@ -203,7 +203,7 @@ src/
 - Responsivo para dispositivos desktop e tablet
 - Exportação compatível com software CAD padrão
 
-## 🤝 Contribuições
+## Contribuições
 
 Este projeto foi desenvolvido como solução educacional completa. Futuras melhorias podem incluir:
 
